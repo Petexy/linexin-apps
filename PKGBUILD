@@ -1,7 +1,7 @@
 # Maintainer: Petexy <https://github.com/Petexy>
 
 pkgname=linexin-tools
-pkgver=0.8.0.r
+pkgver=0.9.0.r
 pkgrel=1
 _currentdate=$(date +"%Y-%m-%d%H-%M-%S")
 pkgdesc='Linexin Tools'
@@ -20,5 +20,7 @@ makedepends=(
 package() {
    mkdir -p ${pkgdir}/usr/share/linexin/widgets
    mkdir -p ${pkgdir}/usr/bin
+   mkdir -- ${pkgdir}/usr/applications
+   mkdir -- ${pkgdir}/usr/icons   
    cp -rf ${srcdir}/usr/ ${pkgdir}/
 }

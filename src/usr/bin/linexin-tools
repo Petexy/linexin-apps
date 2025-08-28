@@ -32,7 +32,7 @@ from gi.repository import Gtk, Adw, GLib, GdkPixbuf, Gio, GObject, Gdk
 WIDGET_DIRECTORY = "/usr/share/linexin/widgets"
 LOCALIZATION_BASE_DIR = "/usr/share/linexin/widgets/localization"
 SIDEBAR_WIDTH = 330
-ICON_SIZE = 32
+ICON_SIZE = 42
 APP_ID = "github.petexy.linexinapps"
 FALLBACK_LANGUAGE = "en_US"
 
@@ -869,10 +869,49 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
             pass  # Continue on error
     
     def _translate_markup_content(self, markup_text, widget_id):
-        """Translate text content within markup while preserving HTML tags."""
+        """Enhanced markup translation that handles both dynamic patterns and multiline descriptions."""
         import re
         
-        # Find text content between tags and standalone text
+        # Handle multiline descriptions first (like the DaVinci installer description)
+        if '\n' in markup_text and not any(tag in markup_text for tag in ['<span', '<b>', '<i>', '<u>']):
+            # This is likely a plain multiline text, translate line by line
+            lines = markup_text.split('\n')
+            translated_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                if line:  # Non-empty lines
+                    translated = _(line, widget_id)
+                    translated_lines.append(translated)
+                else:  # Empty lines (spacing)
+                    translated_lines.append('')
+            
+            return '\n'.join(translated_lines)
+        
+        # Handle dynamic patterns with placeholders (from original code)
+        if "Installation failed: " in markup_text:
+            translated_failed = _("Installation failed: ", widget_id)
+            markup_text = markup_text.replace("Installation failed: ", translated_failed)
+        
+        # Handle other common patterns from the dictionary
+        patterns_to_translate = [
+            "Updating {}...",
+            "Process exited with code {}",
+            "Successfully updated your {}!",
+            "Installing {}...",
+            "Successfully installed {}!"
+        ]
+        
+        for pattern in patterns_to_translate:
+            if pattern.replace("{}", "") in markup_text:
+                translated_pattern = _(pattern, widget_id)
+                if translated_pattern != pattern:
+                    # Replace the base text, preserving the formatting
+                    base_text = pattern.replace("{}", "")
+                    translated_base = translated_pattern.replace("{}", "")
+                    markup_text = markup_text.replace(base_text, translated_base)
+        
+        # Find text content between tags and standalone text (from original code)
         def replace_text(match):
             text_content = match.group(1)
             if text_content.strip():
@@ -888,28 +927,6 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
         # Pattern to match text content (not inside tags)
         # This handles text between > and < or at the start/end
         pattern = r'>([^<]*)<|^([^<]*)<|>([^<]*)$'
-        
-        # Simple approach: extract translatable parts
-        # Look for common patterns in your markup
-        if "Installation failed: " in markup_text:
-            translated_failed = _("Installation failed: ", widget_id)
-            markup_text = markup_text.replace("Installation failed: ", translated_failed)
-        
-        # Handle other common patterns from your dictionary
-        patterns_to_translate = [
-            "Updating {}...",
-            "Process exited with code {}",
-            "Successfully updated your {}!"
-        ]
-        
-        for pattern in patterns_to_translate:
-            if pattern.replace("{}", "") in markup_text:
-                translated_pattern = _(pattern, widget_id)
-                if translated_pattern != pattern:
-                    # Replace the base text, preserving the formatting
-                    base_text = pattern.replace("{}", "")
-                    translated_base = translated_pattern.replace("{}", "")
-                    markup_text = markup_text.replace(base_text, translated_base)
         
         return markup_text
 

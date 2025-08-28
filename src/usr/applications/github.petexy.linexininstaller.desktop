@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Linexin Tools
+
+Exec=python /usr/bin/linexin-tools
+
+Icon=/usr/icons/github.petexy.linexintools.svg
+
+Terminal=false
+Type=Application
+Categories=GTK; System; Linexin; Adwaita; Updates; Tools; 
+StartupNotify=false
