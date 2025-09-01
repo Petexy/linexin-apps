@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=Linexin Tools
+Name=Linexin Center
 
-Exec=python /usr/bin/linexin-tools
+Exec=python /usr/bin/linexin-center
 
-Icon=/usr/icons/github.petexy.linexintools.svg
+Icon=/usr/icons/github.petexy.linexincenter.svg
 
 Terminal=false
 Type=Application

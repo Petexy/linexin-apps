@@ -17,6 +17,7 @@ import threading
 import subprocess
 import os
 import signal
+import argparse
 
 from pathlib import Path
 
@@ -26,13 +27,13 @@ gi.require_version('GdkPixbuf', '2.0')
 
 from gi.repository import Gtk, Adw, GLib, GdkPixbuf, Gio, GObject, Gdk
 
-
+APP_VERSION = "1.0"
 
 # Constants
 WIDGET_DIRECTORY = "/usr/share/linexin/widgets"
 LOCALIZATION_BASE_DIR = "/usr/share/linexin/widgets/localization"
 SIDEBAR_WIDTH = 330
-ICON_SIZE = 42
+ICON_SIZE = 32
 APP_ID = "github.petexy.linexinapps"
 FALLBACK_LANGUAGE = "en_US"
 
@@ -303,8 +304,12 @@ def _(key, widget_name="widget_loader"):
 class WidgetLoaderWindow(Adw.ApplicationWindow):
     """Main application window with sidebar and content area."""
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, hide_sidebar=False, target_widget=None, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        # Store command-line parameters
+        self.hide_sidebar = hide_sidebar
+        self.target_widget = target_widget
         
         # Initialize localization
         self.l10n = get_localization_manager()
@@ -314,8 +319,8 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
         self.set_default_size(1280, 720)
         
         # Data storage
-        self.loaded_widgets = {}      # widget_name -> widget_instance
-        self.widget_metadata = {}      # widget_name -> metadata (icon_path, etc.)
+        self.loaded_widgets = {}      
+        self.widget_metadata = {}     
         self.active_widget = None
         self.active_widget_id = None
         self.translation_timer = None
@@ -339,6 +344,38 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
     # INITIALIZATION METHODS
     # ============================================================
     
+    def resize_window(self, width, height):
+        """Custom resize method that tries different approaches"""
+        try:
+            # This was working before
+            self.set_default_size(width, height)
+            self.set_size_request(width, height)
+            
+            print(f"Window resize to {width}x{height} attempted")
+            return True
+            
+        except Exception as e:
+            print(f"Window resize failed: {e}")
+            return False
+
+    def resize_and_center(self, width, height):
+        """Resize window and attempt to center it"""
+        try:
+            self.set_default_size(width, height)
+            self.set_size_request(width, height)
+            
+            # On Wayland, try using the window manager hints for centering
+            # This may or may not work depending on the compositor
+            self.set_modal(True)   # Temporarily modal windows often get centered
+            GLib.timeout_add(100, lambda: self.set_modal(False))  # Remove modal after brief delay
+            
+            print(f"Window resize to {width}x{height} attempted")
+            return True
+            
+        except Exception as e:
+            print(f"Window resize failed: {e}")
+            return False
+
     def _apply_command_lock(self, locked):
         """Apply or remove command execution lock."""
         self.is_command_locked = locked
@@ -346,9 +383,20 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
         # Block widget switching
         self.widget_list.set_sensitive(not locked)
         
-        # Block window controls
-        if hasattr(self, 'set_deletable'):
-            self.set_deletable(not locked)
+        # Apply opacity to window controls instead of hiding them
+        if hasattr(self, 'sidebar_page') and not self.hide_sidebar:
+            sidebar_header = self.sidebar_page.get_child().get_first_child()
+            if sidebar_header and isinstance(sidebar_header, Gtk.HeaderBar):
+                if locked:
+                    sidebar_header.add_css_class("command-locked-controls")
+                else:
+                    sidebar_header.remove_css_class("command-locked-controls")
+        
+        if hasattr(self, 'content_header'):
+            if locked:
+                self.content_header.add_css_class("command-locked-controls")
+            else:
+                self.content_header.remove_css_class("command-locked-controls")
         
         # Block split view interactions
         if hasattr(self, 'split_view') and hasattr(self.split_view, 'set_show_content'):
@@ -405,17 +453,24 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
         # Create persistent components that won't be recreated
         self._create_persistent_widgets()
         
-        # Build the layout structure
-        self._build_sidebar()
-        self._build_content_area()
-        
-        # Create the split view container
-        self.split_view = Adw.NavigationSplitView()
-        self.split_view.set_sidebar(self.sidebar_page)
-        self.split_view.set_content(self.content_page)
-        
-        # Set as window content
-        self.set_content(self.split_view)
+        if self.hide_sidebar:
+            # Single-widget mode: use content area directly
+            self._build_content_area()
+            self.set_content(self.content_page)
+            self.set_resizable(True)
+            self.set_size_request(1, 1) 
+        else:
+            # Normal mode: build sidebar and use split view
+            self._build_sidebar()
+            self._build_content_area()
+            
+            # Create the split view container
+            self.split_view = Adw.NavigationSplitView()
+            self.split_view.set_sidebar(self.sidebar_page)
+            self.split_view.set_content(self.content_page)
+            
+            # Set as window content
+            self.set_content(self.split_view)
         
         # Apply visual styling
         self._apply_styling()
@@ -470,9 +525,10 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
         header.add_css_class("flat")
         
         # Add title
-        title = Gtk.Label(label=_("Linexin Tools"))
+        title = Gtk.Label(label=_("Linexin Center"))
         title.add_css_class("heading")
         header.set_title_widget(title)
+        
         
         # Add window controls if they're on the left side
         left_buttons, right_buttons = self._parse_button_layout()
@@ -480,8 +536,11 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
         if left_buttons:
             header.set_show_title_buttons(True)
             header.set_decoration_layout(f"{left_buttons}:")
+            title.set_margin_top(0)
+            title.set_margin_start(30)
         else:
             header.set_show_title_buttons(False)
+            title.set_margin_top(10)
         
         return header
     
@@ -534,15 +593,28 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
         header = Gtk.HeaderBar()
         header.add_css_class("flat")
         
-        # Check if window controls should be shown here
-        left_buttons, right_buttons = self._parse_button_layout()
+        # Store reference for later updates
+        self.content_header = header
+        self._widget_header_widget = None
         
-        if right_buttons:
+        # In single-widget mode, always show controls but respect user's preferred side
+        if self.hide_sidebar:
+            left_buttons, right_buttons = self._parse_button_layout()
             header.set_show_title_buttons(True)
-            header.set_decoration_layout(f":{right_buttons}")
+            
+            if left_buttons:
+                header.set_decoration_layout(f"{left_buttons}:")
+            else:
+                header.set_decoration_layout(":close,minimize,maximize")
         else:
-            # Header present for dragging but no buttons
-            header.set_show_title_buttons(False)
+            # Check if window controls should be shown here (normal mode)
+            left_buttons, right_buttons = self._parse_button_layout()
+            
+            if right_buttons:
+                header.set_show_title_buttons(True)
+                header.set_decoration_layout(f":{right_buttons}")
+            else:
+                header.set_show_title_buttons(False)
         
         # Empty title to keep header clean
         header.set_title_widget(Gtk.Label(label=""))
@@ -560,26 +632,152 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
     # ============================================================
     
     def _load_all_widgets(self):
-        """Load all widgets from the configured directory."""
+        """Load widgets - either all widgets or just the target widget."""
         if not os.path.exists(WIDGET_DIRECTORY):
-            self._show_error_in_list(
-                _("No widgets found"),
-                _("Directory does not exist").replace("Directory", WIDGET_DIRECTORY)
-            )
+            if not self.hide_sidebar:
+                self._show_error_in_list(
+                    _("No widgets found"),
+                    _("Directory does not exist").replace("Directory", WIDGET_DIRECTORY)
+                )
             return
         
-        # Find and sort Python files alphabetically
+        if self.hide_sidebar and self.target_widget:
+            # Single-widget mode: load only the target widget
+            self._load_target_widget_only()
+        else:
+            # Normal mode: load all widgets
+            self._load_all_widgets_normal()
+        
+        # Handle widget selection based on mode
+        if self.hide_sidebar and self.target_widget:
+            self._select_target_widget()
+        elif not self.hide_sidebar:
+            self._auto_select_first_widget()
+    
+    def _load_all_widgets_normal(self):
+        """Load all widgets (normal mode)."""
         python_files = [f for f in os.listdir(WIDGET_DIRECTORY) if f.endswith(".py")]
-        python_files.sort()  # Explicit alphabetical sorting
+        python_files.sort()
         
         for filename in python_files:
             filepath = os.path.join(WIDGET_DIRECTORY, filename)
             module_name = filename[:-3]  # Remove .py extension
             self._load_widget_from_file(filepath, module_name)
+
+    def _load_target_widget_only(self):
+        """Load only the target widget specified via command line."""
+        # Normalize target widget name
+        target_normalized = self.target_widget.lower().replace('-', '_').replace(' ', '_')
+        if not target_normalized.endswith('.py'):
+            target_normalized += '.py'
         
-        # Auto-select first widget after all widgets are loaded
-        self._auto_select_first_widget()
-    
+        # Find the matching file
+        if not os.path.exists(WIDGET_DIRECTORY):
+            return
+        
+        python_files = [f for f in os.listdir(WIDGET_DIRECTORY) if f.endswith(".py")]
+        
+        target_file = None
+        for filename in python_files:
+            filename_normalized = filename.lower().replace('-', '_').replace(' ', '_')
+            
+            if (filename_normalized == target_normalized or 
+                filename.lower() == self.target_widget.lower() or
+                filename.lower() == self.target_widget.lower() + '.py'):
+                target_file = filename
+                break
+        
+        if target_file:
+            filepath = os.path.join(WIDGET_DIRECTORY, target_file)
+            module_name = target_file[:-3]  # Remove .py extension
+            print(f"Loading only target widget: {target_file}")
+            self._load_widget_from_file(filepath, module_name)
+        else:
+            print(f"Target widget file not found: {self.target_widget}")
+
+    def _select_target_widget(self):
+        """Select the target widget specified via command line."""
+        if not self.widget_metadata:
+            print(f"No widgets loaded for target: {self.target_widget}")
+            # Show error in content area
+            error_label = Gtk.Label(label=f"Widget '{self.target_widget}' not found or failed to load")
+            error_label.set_vexpand(True)
+            error_label.set_hexpand(True)
+            error_label.add_css_class("dim-label")
+            self.widget_stack.add_named(error_label, "error")
+            self.widget_stack.set_visible_child_name("error")
+            return
+        
+        # In single-widget mode, there should only be one widget loaded
+        widget_name = list(self.widget_metadata.keys())[0]
+        print(f"Loading single widget: {widget_name}")
+        self._load_single_widget_mode(widget_name)
+
+    def _load_single_widget_mode(self, widget_name):
+        """Load a single widget in fullscreen mode (no sidebar)."""
+        if widget_name not in self.loaded_widgets:
+            return
+        
+        widget_instance = self.loaded_widgets[widget_name]
+        self.active_widget = widget_instance
+        self.active_widget_id = self.widget_metadata.get(widget_name, {}).get('widget_id')
+        
+        # Update header with widget-specific controls
+        GLib.idle_add(self.update_widget_header)
+
+        # Generate stack page name using filename
+        filename = self.widget_metadata.get(widget_name, {}).get('filename', widget_name)
+        stack_page_name = self._generate_stack_page_name(filename)
+        
+        # Add widget to stack
+        self._add_widget_to_stack(widget_instance, widget_name, stack_page_name)
+        
+        # Switch to the widget
+        self.widget_stack.set_visible_child_name(stack_page_name)
+        
+        # Translate content if needed
+        if self.active_widget_id and isinstance(widget_instance, Gtk.Widget):
+            self._translate_widget_content(widget_instance, self.active_widget_id)
+            self._connect_widget_signals(widget_instance, self.active_widget_id)
+        
+        # Start translation monitoring
+        self._start_translation_monitoring()
+        
+        # Update window title
+        display_name = _(widget_name, self.active_widget_id) if self.active_widget_id else widget_name
+        self.set_title(display_name)
+        self.content_page.set_title(display_name)
+
+    def update_widget_header(self):
+        """Update header bar with widget-specific controls on opposite side of window controls."""
+        if not self.hide_sidebar or not hasattr(self, 'content_header'):
+            return
+        
+        # Remove existing widget controls
+        if hasattr(self, '_widget_header_widget') and self._widget_header_widget:
+            self.content_header.remove(self._widget_header_widget)
+            self._widget_header_widget = None
+        
+        # Add new widget controls if available
+        if hasattr(self, 'active_widget') and self.active_widget:
+            if hasattr(self.active_widget, 'get_header_bar_widget'):
+                try:
+                    widget_header_widget = self.active_widget.get_header_bar_widget()
+                    if widget_header_widget:
+                        # Determine which side to place the widget button
+                        left_buttons, right_buttons = self._parse_button_layout()
+                        
+                        if left_buttons:
+                            # Window controls on left, put widget button on right
+                            self.content_header.pack_end(widget_header_widget)
+                        else:
+                            # Window controls on right (or default), put widget button on left
+                            self.content_header.pack_start(widget_header_widget)
+                        
+                        self._widget_header_widget = widget_header_widget
+                except Exception as e:
+                    print(f"Error adding widget header controls: {e}")
+
     def _auto_select_first_widget(self):
         """Automatically select the first widget in the list."""
         if not self.first_widget_loaded and self.widget_list.get_first_child():
@@ -618,7 +816,11 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
             
             try:
                 # Try to instantiate the widget
-                widget_instance = attribute()
+                try:
+                    widget_instance = attribute(hide_sidebar=self.hide_sidebar, window=self)
+                except TypeError:
+                    # Fallback for widgets that don't accept the parameter
+                    widget_instance = attribute()
                 
                 # Check if it has the required widgetname attribute
                 if hasattr(widget_instance, 'widgetname'):
@@ -1220,7 +1422,16 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
             
             .command-locked {
                 background: alpha(@warning_color, 0.1);
-            }            
+            }
+            
+            /* Window controls opacity during command lock */
+            .command-locked-controls windowcontrols {
+                opacity: 0;
+            }
+            
+            .command-locked-controls windowcontrols button {
+                opacity: 0;
+            }           
         """
         
         css_provider = Gtk.CssProvider()
@@ -1239,10 +1450,57 @@ class WidgetLoaderApp(Adw.Application):
     def __init__(self, **kwargs):
         super().__init__(application_id=APP_ID, **kwargs)
         self.connect('activate', self.on_activate)
+        
+        # Initialize command line parameters
+        self.hide_sidebar = False
+        self.target_widget = None
+        
+        # Parse command line arguments manually
+        self._parse_arguments()
+    
+    def _parse_arguments(self):
+        """Parse command line arguments manually."""
+        import sys
+        
+        print(f"Command line arguments: {sys.argv}")
+        
+        # Create a new argv list without our custom arguments
+        new_argv = [sys.argv[0]]  # Keep script name
+        
+        i = 1  # Start from index 1 (skip script name)
+        while i < len(sys.argv):
+            arg = sys.argv[i]
+            
+            if arg == '--widget' or arg == '-w':
+                if i + 1 < len(sys.argv):
+                    self.target_widget = sys.argv[i + 1]
+                    self.hide_sidebar = True
+                    print(f"Found widget argument: {self.target_widget}")
+                    i += 2  # Skip both --widget and the widget name
+                    continue
+                else:
+                    print("Error: --widget requires a widget name")
+                    sys.exit(1)
+            elif arg == '--version' or arg == '-v':
+                print(f"Linexin Tools v{APP_VERSION}")
+                sys.exit(0)
+            else:
+                # Keep other arguments for GTK
+                new_argv.append(arg)
+                i += 1
+        
+        # Replace sys.argv with cleaned version
+        sys.argv = new_argv
+        print(f"Cleaned arguments for GTK: {sys.argv}")
+        print(f"Final settings: hide_sidebar={self.hide_sidebar}, target_widget={self.target_widget}")
     
     def on_activate(self, app):
         """Handle application activation."""
-        self.window = WidgetLoaderWindow(application=app)
+        self.window = WidgetLoaderWindow(
+            application=app,
+            hide_sidebar=self.hide_sidebar,
+            target_widget=self.target_widget
+        )
         self.window.present()
 
 

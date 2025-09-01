@@ -1,10 +1,10 @@
 # Maintainer: Petexy <https://github.com/Petexy>
 
-pkgname=linexin-tools
-pkgver=0.9.0.r
+pkgname=linexin-center
+pkgver=1.0.0.r
 pkgrel=1
 _currentdate=$(date +"%Y-%m-%d%H-%M-%S")
-pkgdesc='Linexin Tools'
+pkgdesc='Linexin Center'
 url='https://github.com/Petexy'
 arch=(x86_64)
 license=('GPL-3.0')
@@ -20,7 +20,7 @@ makedepends=(
 package() {
    mkdir -p ${pkgdir}/usr/share/linexin/widgets
    mkdir -p ${pkgdir}/usr/bin
-   mkdir -- ${pkgdir}/usr/applications
-   mkdir -- ${pkgdir}/usr/icons   
+   mkdir -p ${pkgdir}/usr/applications
+   mkdir -p ${pkgdir}/usr/icons   
    cp -rf ${srcdir}/usr/ ${pkgdir}/
 }
