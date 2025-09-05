@@ -368,11 +368,15 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
         
         # Window configuration
         self.set_title(_("Widget Loader"))
-        self.set_default_size(1280, 720)
+        self.set_default_size(1280, 730)
         
         # Data storage
         self.loaded_widgets = {}      
         self.widget_metadata = {}     
+        # Maintain a stable, sorted order for widgets
+        self.widget_order = []          # list of widget names in UI order
+        self.widget_index = {}          # name -> index for fast lookup
+        self._visible_widget_name = None  # track last visible widget for animation direction
         self.active_widget = None
         self.active_widget_id = None
         self.translation_timer = None
@@ -785,7 +789,21 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
         self._add_widget_to_stack(widget_instance, widget_name, stack_page_name)
         
         # Switch to the widget
-        self.widget_stack.set_visible_child_name(stack_page_name)
+        # Choose transition direction based on UI order
+        transition = None
+        prev_name = getattr(self, '_visible_widget_name', None)
+        if prev_name and prev_name in self.widget_index and widget_name in self.widget_index:
+            prev_idx = self.widget_index[prev_name]
+            curr_idx = self.widget_index[widget_name]
+            if curr_idx > prev_idx:
+                transition = Gtk.StackTransitionType.SLIDE_DOWN
+            elif curr_idx < prev_idx:
+                transition = Gtk.StackTransitionType.SLIDE_UP
+        if transition is not None:
+            self.widget_stack.set_visible_child_full(stack_page_name, transition)
+        else:
+            self.widget_stack.set_visible_child_name(stack_page_name)
+        self._visible_widget_name = widget_name
         
         # Translate content if needed
         if self.active_widget_id and isinstance(widget_instance, Gtk.Widget):
@@ -897,6 +915,11 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
             'widget_id': widget_id,
             'filename': filename  # Add this line
         }
+        
+        # Record order for correct stack animations
+        if widget_name not in self.widget_index:
+            self.widget_order.append(widget_name)
+            self.widget_index[widget_name] = len(self.widget_order) - 1
         
         # Add to sidebar - translate the name if possible
         translated_name = _(widget_name, widget_id)
@@ -1016,7 +1039,21 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
             self._add_widget_to_stack(widget_instance, widget_name, stack_page_name)
         
         # Switch to the widget with animation
-        self.widget_stack.set_visible_child_name(stack_page_name)
+        # Choose transition direction based on UI order
+        transition = None
+        prev_name = getattr(self, '_visible_widget_name', None)
+        if prev_name and prev_name in self.widget_index and widget_name in self.widget_index:
+            prev_idx = self.widget_index[prev_name]
+            curr_idx = self.widget_index[widget_name]
+            if curr_idx > prev_idx:
+                transition = Gtk.StackTransitionType.SLIDE_DOWN
+            elif curr_idx < prev_idx:
+                transition = Gtk.StackTransitionType.SLIDE_UP
+        if transition is not None:
+            self.widget_stack.set_visible_child_full(stack_page_name, transition)
+        else:
+            self.widget_stack.set_visible_child_name(stack_page_name)
+        self._visible_widget_name = widget_name
         
         # Translate the widget's content if it has a widget_id
         if self.active_widget_id and isinstance(widget_instance, Gtk.Widget):
@@ -1299,7 +1336,35 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
             self._add_widget_to_stack(widget_instance, widget_name, stack_page_name)
         
         # Switch to the widget with animation
-        self.widget_stack.set_visible_child_name(stack_page_name)
+        # Choose transition direction based on UI order
+        transition = None
+        prev_name = getattr(self, '_visible_widget_name', None)
+        if prev_name and prev_name in self.widget_index and widget_name in self.widget_index:
+            prev_idx = self.widget_index[prev_name]
+            curr_idx = self.widget_index[widget_name]
+            if curr_idx > prev_idx:
+                transition = Gtk.StackTransitionType.SLIDE_DOWN
+            elif curr_idx < prev_idx:
+                transition = Gtk.StackTransitionType.SLIDE_UP
+        if transition is not None:
+            self.widget_stack.set_visible_child_full(stack_page_name, transition)
+        else:
+            # Choose transition direction based on UI order
+            transition = None
+            prev_name = getattr(self, '_visible_widget_name', None)
+            if prev_name and prev_name in self.widget_index and widget_name in self.widget_index:
+                prev_idx = self.widget_index[prev_name]
+                curr_idx = self.widget_index[widget_name]
+                if curr_idx > prev_idx:
+                    transition = Gtk.StackTransitionType.SLIDE_DOWN
+                elif curr_idx < prev_idx:
+                    transition = Gtk.StackTransitionType.SLIDE_UP
+            if transition is not None:
+                self.widget_stack.set_visible_child_full(stack_page_name, transition)
+            else:
+                self.widget_stack.set_visible_child_name(stack_page_name)
+            self._visible_widget_name = widget_name
+        self._visible_widget_name = widget_name
         
         # Translate the widget's content if it has a widget_id
         if self.active_widget_id and isinstance(widget_instance, Gtk.Widget):
