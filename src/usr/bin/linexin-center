@@ -367,7 +367,7 @@ class WidgetLoaderWindow(Adw.ApplicationWindow):
         self.l10n = get_localization_manager()
         
         # Window configuration
-        self.set_title(_("Widget Loader"))
+        self.set_title(_("Linexin Center"))
         self.set_default_size(1280, 730)
         
         # Data storage
